@@ -878,7 +878,6 @@ class PatientController extends Controller
         return response()->json(['success' => true]);
     }
 
-    // Note: $request added as first param so performed_by can be read from the request body
     public function deleteLetter(Request $request, $identifier)
     {
         $isUuid = strpos($identifier, 'MAMS-') === 0;
@@ -921,6 +920,7 @@ class PatientController extends Controller
         $latestRecord = DB::table('patient_history')
             ->where('patient_id', $patient->patient_id)
             ->orderBy('date_issued', 'desc')
+            ->orderBy('gl_no', 'desc')
             ->first();
 
         if (!$latestRecord) {
@@ -962,6 +962,7 @@ class PatientController extends Controller
         $latestRecord = DB::table('patient_history')
             ->where('patient_id', $patientId)
             ->orderBy('date_issued', 'desc')
+            ->orderBy('gl_no', 'desc')
             ->first();
 
         if (!$latestRecord) {
@@ -996,13 +997,17 @@ class PatientController extends Controller
     {
         $cooldownDays = $this->getEligibilityCooldownDays();
 
+        // FIX: Use uuid-based subquery to guarantee exactly ONE row per patient,
+        // breaking date ties with gl_no DESC so the highest gl_no wins.
         $patients = DB::table('patient_list')
-            ->leftJoin('patient_history', function ($join) {
-                $join->on('patient_list.patient_id', '=', 'patient_history.patient_id')
-                    ->whereRaw('patient_history.date_issued = (
-                        SELECT MAX(ph2.date_issued)
+            ->leftJoin('patient_history as ph_latest', function ($join) {
+                $join->on('patient_list.patient_id', '=', 'ph_latest.patient_id')
+                    ->whereRaw('ph_latest.uuid = (
+                        SELECT ph2.uuid
                         FROM patient_history ph2
                         WHERE ph2.patient_id = patient_list.patient_id
+                        ORDER BY ph2.date_issued DESC, ph2.gl_no DESC
+                        LIMIT 1
                     )');
             })
             ->select(
@@ -1019,48 +1024,78 @@ class PatientController extends Controller
                 'patient_list.barangay',
                 'patient_list.house_address',
                 'patient_list.phone_number',
-                'patient_history.uuid',
-                'patient_history.gl_no',
-                'patient_history.category as last_category',  // now included
-                'patient_history.date_issued as last_issued_at'
+                'ph_latest.uuid',
+                'ph_latest.gl_no',
+                'ph_latest.category as last_category',
+                'ph_latest.date_issued as last_issued_at'
             )
             ->get();
 
         $today = Carbon::today()->startOfDay();
+
+        // FIX: Use uuid-based subquery per category to guarantee exactly ONE row
+        // per patient+category combination, again breaking ties with gl_no DESC.
+        $latestPerCategory = DB::table('patient_history as ph1')
+            ->whereRaw('ph1.uuid = (
+                SELECT ph2.uuid
+                FROM patient_history ph2
+                WHERE ph2.patient_id = ph1.patient_id
+                  AND ph2.category = ph1.category
+                ORDER BY ph2.date_issued DESC, ph2.gl_no DESC
+                LIMIT 1
+            )')
+            ->select('ph1.patient_id', 'ph1.category', 'ph1.date_issued', 'ph1.gl_no')
+            ->get()
+            ->groupBy('patient_id');
 
         $allSectorMappings = DB::table('user_sectors')
             ->select('patient_id', 'sector_id')
             ->get()
             ->groupBy('patient_id');
 
-        $patientsWithEligibility = $patients->map(function ($patient) use ($today, $cooldownDays, $allSectorMappings) {
+        $patientsWithEligibility = $patients->map(function ($patient) use ($today, $cooldownDays, $allSectorMappings, $latestPerCategory) {
             $sectorIds = isset($allSectorMappings[$patient->patient_id])
                 ? $allSectorMappings[$patient->patient_id]->pluck('sector_id')->toArray()
                 : [];
 
+            // Build per-category eligibility map
+            $categoryEligibility = [];
+            if (isset($latestPerCategory[$patient->patient_id])) {
+                foreach ($latestPerCategory[$patient->patient_id] as $record) {
+                    $eligDate = Carbon::parse($record->date_issued)->startOfDay()->addDays($cooldownDays);
+                    $eligible = $today->greaterThanOrEqualTo($eligDate);
+                    $categoryEligibility[$record->category] = [
+                        'eligible'         => $eligible,
+                        'eligibility_date' => $eligDate->toDateString(),
+                        'days_remaining'   => $eligible ? null : $today->diffInDays($eligDate),
+                        'gl_no'            => $record->gl_no,
+                        'last_issued_at'   => $record->date_issued,
+                    ];
+                }
+            }
+
             if (!$patient->last_issued_at) {
                 return array_merge((array)$patient, [
-                    'eligible'         => true,
-                    'eligibility_date' => null,
-                    'days_remaining'   => null,
-                    'last_category'    => null,
-                    'sector_ids'       => $sectorIds,
+                    'eligible'             => true,
+                    'eligibility_date'     => null,
+                    'days_remaining'       => null,
+                    'last_category'        => null,
+                    'sector_ids'           => $sectorIds,
+                    'category_eligibility' => $categoryEligibility,
                 ]);
             }
 
-            $eligibilityDate = Carbon::parse($patient->last_issued_at)
-                ->startOfDay()
-                ->addDays($cooldownDays);
-
+            $eligibilityDate = Carbon::parse($patient->last_issued_at)->startOfDay()->addDays($cooldownDays);
             $eligible = $today->greaterThanOrEqualTo($eligibilityDate);
             $daysRemaining = $eligible ? null : max(0, $today->diffInDays($eligibilityDate));
 
             return array_merge((array)$patient, [
-                'eligible'         => $eligible,
-                'eligibility_date' => $eligibilityDate->toDateString(),
-                'days_remaining'   => $daysRemaining,
-                'last_category'    => $patient->last_category,  // now included
-                'sector_ids'       => $sectorIds,
+                'eligible'             => $eligible,
+                'eligibility_date'     => $eligibilityDate->toDateString(),
+                'days_remaining'       => $daysRemaining,
+                'last_category'        => $patient->last_category,
+                'sector_ids'           => $sectorIds,
+                'category_eligibility' => $categoryEligibility,
             ]);
         });
 
@@ -1079,17 +1114,19 @@ class PatientController extends Controller
     {
         $cooldownDays    = $this->getEligibilityCooldownDays();
         $today           = Carbon::today()->startOfDay();
-        $excludeCategory = $request->query('exclude_category'); // e.g. "MEDICINE"
+        $excludeCategory = $request->query('exclude_category');
 
-        // Get the single most recent record per category for this patient,
-        // skipping the category that is currently being issued.
+        // FIX: Use uuid-based subquery per category to guarantee exactly ONE row
+        // per category, breaking date ties with gl_no DESC.
         $query = DB::table('patient_history as ph1')
             ->where('ph1.patient_id', $patientId)
-            ->whereRaw('ph1.date_issued = (
-                SELECT MAX(ph2.date_issued)
+            ->whereRaw('ph1.uuid = (
+                SELECT ph2.uuid
                 FROM patient_history ph2
                 WHERE ph2.patient_id = ph1.patient_id
                   AND ph2.category = ph1.category
+                ORDER BY ph2.date_issued DESC, ph2.gl_no DESC
+                LIMIT 1
             )')
             ->select(
                 'ph1.category',
@@ -1097,7 +1134,6 @@ class PatientController extends Controller
                 'ph1.date_issued as last_issued_at'
             );
 
-        // Exclude the current category — it is already enforced at the dropdown level
         if ($excludeCategory) {
             $query->where('ph1.category', '!=', $excludeCategory);
         }
@@ -1110,7 +1146,6 @@ class PatientController extends Controller
                     ->startOfDay()
                     ->addDays($cooldownDays);
 
-                // Skip categories where the patient is already eligible again
                 if ($today->greaterThanOrEqualTo($eligibilityDate)) {
                     return null;
                 }
@@ -1123,8 +1158,8 @@ class PatientController extends Controller
                     'days_remaining'   => $today->diffInDays($eligibilityDate),
                 ];
             })
-            ->filter()   // remove nulls (eligible categories)
-            ->values();  // re-index
+            ->filter()
+            ->values();
 
         return response()->json($nonEligibleCategories);
     }
