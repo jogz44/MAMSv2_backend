@@ -14,7 +14,7 @@ class GeneralSummaryController extends Controller
             ->join('patient_list', 'patient_history.patient_id', '=', 'patient_list.patient_id')
             ->leftJoin('client_name', 'patient_history.uuid', '=', 'client_name.uuid') // Changed to use UUID
             ->select(
-                'patient_history.uuid', // Added UUID
+                'patient_history.uuid',
                 'patient_history.gl_no',
                 'patient_history.patient_id',
                 'patient_history.category',

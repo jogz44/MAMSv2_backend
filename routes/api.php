@@ -25,8 +25,9 @@ Route::post('/patients/existing', [PatientController::class, 'existingPatientLis
 Route::post('/patients/check-eligibility', [PatientController::class, 'checkEligibility']);
 Route::post('/patients/check-eligibility-by-id', [PatientController::class, 'checkEligibilityById']);
 Route::get('/patients', [PatientController::class, 'getPatients']);
-Route::get('/patients/all-with-eligibility', [PatientController::class, 'getAllPatientsWithEligibility']);
 Route::get('/patients/search', [PatientController::class, 'search']);
+Route::get('/patients/all-with-eligibility', [PatientController::class, 'getAllPatientsWithEligibility']);
+Route::get('/patients/{patientId}/previous-categories', [PatientController::class, 'getPreviousCategories']); // NEW
 Route::get('/patient-details/{identifier}', [PatientController::class, 'getPatientDetails']);
 Route::get('/patient-history/{identifier}', [PatientController::class, 'getPatientHistory']);
 Route::post('/patient-details/delete/{identifier}', [PatientController::class, 'deleteLetter']);
