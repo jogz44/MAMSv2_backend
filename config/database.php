@@ -63,6 +63,26 @@ return [
             ]) : [],
         ],
 
+        'pharmasys' => [
+            'driver' => 'mysql',
+            'url' => env('PHARMASYS_DB_URL'),
+            'host' => env('PHARMASYS_DB_HOST', env('DB_HOST', '127.0.0.1')),
+            'port' => env('PHARMASYS_DB_PORT', env('DB_PORT', '3306')),
+            'database' => env('PHARMASYS_DB_DATABASE', 'pharmasysdb'),
+            'username' => env('PHARMASYS_DB_USERNAME', env('DB_USERNAME', 'root')),
+            'password' => env('PHARMASYS_DB_PASSWORD', env('DB_PASSWORD', '')),
+            'unix_socket' => env('PHARMASYS_DB_SOCKET', env('DB_SOCKET', '')),
+            'charset' => env('PHARMASYS_DB_CHARSET', env('DB_CHARSET', 'utf8mb4')),
+            'collation' => env('PHARMASYS_DB_COLLATION', env('DB_COLLATION', 'utf8mb4_unicode_ci')),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                (PHP_VERSION_ID >= 80500 ? \Pdo\Mysql::ATTR_SSL_CA : \PDO::MYSQL_ATTR_SSL_CA) => env('PHARMASYS_MYSQL_ATTR_SSL_CA', env('MYSQL_ATTR_SSL_CA')),
+            ]) : [],
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),
