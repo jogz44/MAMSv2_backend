@@ -1,11 +1,16 @@
 <?php
 
+$allowedOrigins = array_filter(array_map('trim', explode(',', (string) env(
+    'CORS_ALLOWED_ORIGINS',
+    'http://localhost:9000,http://127.0.0.1:9000,http://192.168.150.188:9000'
+))));
+
 return [
-    'paths' => ['api/*', 'sanctum/csrf-cookie'],  // Allow all paths
+    'paths' => ['api/*', 'sanctum/csrf-cookie'],
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['http://localhost:9000'],
+    'allowed_origins' => $allowedOrigins,
 
     'allowed_origins_patterns' => [],
 
@@ -15,5 +20,5 @@ return [
 
     'max_age' => 0,
 
-    'supports_credentials' => false,
+    'supports_credentials' => true,
 ];

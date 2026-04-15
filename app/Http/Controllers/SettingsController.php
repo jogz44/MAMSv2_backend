@@ -150,10 +150,6 @@ class SettingsController extends Controller
 
     public function getAccounts()
     {
-<<<<<<< Updated upstream
-        $accounts = User::select('ID', 'USERNAME', 'PASSWORD', 'ROLE', 'CATEGORY', 'PARTNER')->orderBy('ID')->get();
-        return response()->json([$accounts]);
-=======
         $localAccounts = User::select('ID', 'USERNAME', 'PASSWORD', 'ROLE')
             ->orderBy('ID')
             ->get()
@@ -205,26 +201,10 @@ class SettingsController extends Controller
         }
 
         return response()->json([$localAccounts->concat($pharmasysAccounts)->values()]);
->>>>>>> Stashed changes
     }
 
     public function createAccount(Request $request)
     {
-<<<<<<< Updated upstream
-        $request->validate([
-            'username' => 'required|string|max:255',
-            'password' => 'required|string|min:1',
-            'role' => 'required|string|max:255',
-            'category' => 'nullable|in:MEDICINE,LABORATORY,HOSPITAL',
-            'partner' => 'nullable|string|max:255',
-        ]);
-
-        if ($request->input('role') === 'PHARMACIST') {
-            $request->validate([
-                'category' => 'required|in:MEDICINE,LABORATORY,HOSPITAL',
-                'partner' => 'required|string|max:255',
-            ]);
-=======
         $targetDb = $this->resolveTargetDbSource($request);
         $role = strtoupper((string) $request->input('role'));
         $partners = $request->input('partners');
@@ -259,29 +239,11 @@ class SettingsController extends Controller
             );
 
             return response()->json(['success' => true]);
->>>>>>> Stashed changes
         }
 
         $account = User::create([
             'USERNAME' => $request->input('username'),
             'PASSWORD' => Hash::make($request->input('password')),
-<<<<<<< Updated upstream
-            'ROLE'     => $request->input('role'),
-            'CATEGORY' => $request->input('category'),
-            'PARTNER'  => $request->input('partner'),
-        ]);
-
-        $changes = "Username: '{$account->USERNAME}' | Role: '{$account->ROLE}'";
-        if ($account->CATEGORY) {
-            $changes .= " | Category: '{$account->CATEGORY}'";
-        }
-        if ($account->PARTNER) {
-            $changes .= " | Partner: '{$account->PARTNER}'";
-        }
-
-        $this->logActivity($request, 'ACCOUNT CREATED', $changes, 'ACCOUNT OPTIONS');
-
-=======
             'ROLE'     => $role,
         ]);
 
@@ -291,7 +253,6 @@ class SettingsController extends Controller
             "Username: '{$account->USERNAME}' | Role: '{$account->ROLE}' | DB: dummymamsdb",
             'ACCOUNT OPTIONS'
         );
->>>>>>> Stashed changes
 
         return response()->json(['success' => true]);
     }
