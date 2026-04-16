@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class PatientNames extends Model
 {
+    protected $connection = 'pharmasys';
     protected $table = 'patient_names';
     protected $primaryKey = 'patient_id';
     public $incrementing = true;

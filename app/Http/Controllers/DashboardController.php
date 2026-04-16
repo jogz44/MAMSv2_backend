@@ -45,9 +45,11 @@ class DashboardController extends Controller
 
             $invoiceAmount = PatientHistory::where('category', $category)
                 ->whereYear('date_issued', $year)
-                ->sum('hospital_bill');
+                ->sum('invoice_amount');
 
-            $remainingBal = $totalBudget - $totalReleased;
+            // Return any un-invoiced portion back to remaining balance:
+            // remaining = budget - released + (released - invoice)
+            $remainingBal = $totalBudget - $totalReleased + ($totalReleased - $invoiceAmount);
 
             $data[strtolower($category) . 'Data'] = [
                 'totalBudget' => $totalBudget,
