@@ -7,6 +7,7 @@ use App\Models\ClientName;
 use App\Models\PatientHistory;
 use App\Models\WebsiteSettings;
 use App\Models\ActivityLog;
+use App\Models\Partners;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -87,6 +88,39 @@ class PatientController extends Controller
         return $cleaned;
     }
 
+    private function normalizeBirthdate($birthdate): ?string
+    {
+        if (is_null($birthdate)) {
+            return null;
+        }
+
+        $value = trim((string) $birthdate);
+        if ($value === '' || strtolower($value) === 'null' || strtolower($value) === 'n/a') {
+            return null;
+        }
+
+        foreach (['Y-m-d', 'Y-d-m', 'm/d/Y', 'd/m/Y'] as $format) {
+            try {
+                $parsed = Carbon::createFromFormat($format, $value);
+                if ($parsed && $parsed->format($format) === $value) {
+                    return $parsed->format('Y-m-d');
+                }
+            } catch (\Exception $e) {
+                // Try next format
+            }
+        }
+
+        return null;
+    }
+
+    private function isPartnerValidForCategory(string $category, string $partner): bool
+    {
+        return Partners::where('is_active', true)
+            ->where('category', $category)
+            ->where('partner', $partner)
+            ->exists();
+    }
+
     /**
      * Snapshot current sector IDs for a patient before syncing.
      * Returns a sorted array of integer sector IDs.
@@ -153,10 +187,38 @@ class PatientController extends Controller
             $updatePatientInfo = $request->boolean('update_patient_info');
 
             $phoneNumber = $this->normalizePhoneNumber($request->input('phone_number'));
+            $birthdate = $this->normalizeBirthdate($request->input('birthdate'));
+            $category = strtoupper(trim((string) $request->input('category', '')));
+            $partnerInput = $nullify($request->input('partner'));
+            $partner = is_null($partnerInput) ? null : strtoupper(trim((string) $partnerInput));
 
             if ($request->filled('phone_number') && $phoneNumber === null) {
                 return response()->json([
                     'error' => 'Invalid phone number format. Must be 11 digits starting with 09 or +63'
+                ], 422);
+            }
+
+            if ($request->filled('birthdate') && $birthdate === null) {
+                return response()->json([
+                    'error' => 'Invalid birthdate format. Use MM/DD/YYYY, DD/MM/YYYY, or YYYY-MM-DD.'
+                ], 422);
+            }
+
+            if (!in_array($category, ['MEDICINE', 'LABORATORY', 'HOSPITAL'], true)) {
+                return response()->json([
+                    'error' => 'Invalid category selected.'
+                ], 422);
+            }
+
+            if (is_null($partner) || $partner === '') {
+                return response()->json([
+                    'error' => 'Partner is required.'
+                ], 422);
+            }
+
+            if (!$this->isPartnerValidForCategory($category, $partner)) {
+                return response()->json([
+                    'error' => 'Selected partner does not belong to the selected category.'
                 ], 422);
             }
 
@@ -166,7 +228,7 @@ class PatientController extends Controller
                     'firstname'     => $request->input('firstname'),
                     'middlename'    => $nullify($request->input('middlename')),
                     'suffix'        => $nullify($request->input('suffix')),
-                    'birthdate'     => $nullify($request->input('birthdate')),
+                    'birthdate'     => $birthdate,
                     'sex'           => $nullify($request->input('sex')),
                     'preference'    => $nullify($request->input('preference')),
                     'province'      => $nullify($request->input('province')),
@@ -183,7 +245,7 @@ class PatientController extends Controller
                     'firstname'     => $request->input('firstname'),
                     'middlename'    => $nullify($request->input('middlename')),
                     'suffix'        => $nullify($request->input('suffix')),
-                    'birthdate'     => $nullify($request->input('birthdate')),
+                    'birthdate'     => $birthdate,
                     'sex'           => $nullify($request->input('sex')),
                     'preference'    => $nullify($request->input('preference')),
                     'province'      => $nullify($request->input('province')),
@@ -199,14 +261,15 @@ class PatientController extends Controller
             }
 
             $hospitalBillInput = $request->input('hospital_bill');
-            $hospitalBill = (is_null($hospitalBillInput) || $hospitalBillInput === '' || strtolower($hospitalBillInput) === 'null' || strtolower($hospitalBillInput) === 'n/a')
+            $hospitalBillRaw = is_null($hospitalBillInput) ? null : trim((string) $hospitalBillInput);
+            $hospitalBill = (is_null($hospitalBillRaw) || $hospitalBillRaw === '' || strtolower($hospitalBillRaw) === 'null' || strtolower($hospitalBillRaw) === 'n/a')
                 ? null
-                : (float) $hospitalBillInput;
+                : (float) $hospitalBillRaw;
 
             $patientHistory = PatientHistory::create([
                 'patient_id'    => $patientID,
-                'category'      => $request->input('category'),
-                'partner'       => $nullify($request->input('partner')),
+                'category'      => $category,
+                'partner'       => $partner,
                 'hospital_bill' => $hospitalBill,
                 'issued_amount' => $nullify($request->input('issued_amount')),
                 'issued_by'     => $nullify($request->input('issued_by')),

@@ -24,6 +24,35 @@ class DropdownOptionsController extends Controller
         ]);
     }
 
+    /**
+     * Restore default sectors when none are active.
+     */
+    private function ensureDefaultSectors(): void
+    {
+        if (Sectors::where('is_active', true)->exists()) {
+            return;
+        }
+
+        $defaults = ['SENIOR', 'PWD', 'SOLO PARENT'];
+
+        foreach ($defaults as $sectorName) {
+            $existing = Sectors::whereRaw('UPPER(sector) = ?', [strtoupper($sectorName)])->first();
+
+            if ($existing) {
+                if (!$existing->is_active) {
+                    $existing->is_active = true;
+                    $existing->save();
+                }
+                continue;
+            }
+
+            Sectors::create([
+                'sector'    => $sectorName,
+                'is_active' => true,
+            ]);
+        }
+    }
+
     // ===================== GET ALL OPTIONS =====================
 
     public function getPreferenceOptions()
@@ -49,6 +78,7 @@ class DropdownOptionsController extends Controller
     public function getSectorOptions()
     {
         try {
+            $this->ensureDefaultSectors();
             $options = Sectors::where('is_active', true)->orderBy('sector')->get();
             return response()->json($options);
         } catch (\Exception $e) {
@@ -59,6 +89,7 @@ class DropdownOptionsController extends Controller
     public function getAllOptions()
     {
         try {
+            $this->ensureDefaultSectors();
             $preferences = Preferences::where('is_active', true)->orderBy('preference')->get();
             $partners = Partners::where('is_active', true)->orderBy('category')->orderBy('partner')->get();
             $sectors = Sectors::where('is_active', true)->orderBy('sector')->get();
