@@ -10,14 +10,7 @@ return [
 
     'allowed_methods' => ['*'],
 
-<<<<<<< HEAD
-    'allowed_origins' => [
-        'http://localhost:9000',
-        'http://127.0.0.1:9000',
-    ],
-=======
     'allowed_origins' => $allowedOrigins,
->>>>>>> d8707714d1c8057a47abf27f02764f5ff675a24d
 
     'allowed_origins_patterns' => [],
 

@@ -47,15 +47,23 @@ class DashboardController extends Controller
                 ->whereYear('date_issued', $year)
                 ->sum('invoice_amount');
 
-            // Return any un-invoiced portion back to remaining balance:
-            // remaining = budget - released + (released - invoice)
-            $remainingBal = $totalBudget - $totalReleased + ($totalReleased - $invoiceAmount);
+            // Add back only the released-over-invoice excess for rows with a real invoice.
+            // This keeps totalReleased deducted from remaining while returning valid excess.
+            $returnedToBalance = PatientHistory::where('category', $category)
+                ->whereYear('date_issued', $year)
+                ->whereNotNull('invoice_amount')
+                ->where('invoice_amount', '>', 0)
+                ->whereColumn('issued_amount', '>', 'invoice_amount')
+                ->sum(DB::raw('issued_amount - invoice_amount'));
+
+            $remainingBal = $totalBudget - $totalReleased - $invoiceAmount + $returnedToBalance;
 
             $data[strtolower($category) . 'Data'] = [
                 'totalBudget' => $totalBudget,
                 'totalPatients' => $totalPatients,
                 'totalReleased' => $totalReleased,
                 'invoiceAmount' => $invoiceAmount,
+                'returnedToBalance' => $returnedToBalance,
                 'remaining' => $remainingBal,
             ];
         }
